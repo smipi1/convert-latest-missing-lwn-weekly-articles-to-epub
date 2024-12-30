@@ -1,1 +1,1 @@
-# fetch-lwn-weekly-on-gmail-notification
+# Convert Latest Missing LWN.net weekly articles to EPUB

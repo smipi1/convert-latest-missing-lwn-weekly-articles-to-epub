@@ -169,3 +169,8 @@ cython_debug/
 
 # PyPI configuration file
 .pypirc
+
+# Configuration files
+config.yaml
+config.yml
+config.json

@@ -21,11 +21,13 @@ pyasn1_modules==0.4.1
 pycparser==2.22
 pyOpenSSL==24.3.0
 pyparsing==3.2.0
+python-dateutil==2.9.0.post0
 PyYAML==6.0.2
 ratelimit==2.2.1
 requests==2.32.3
 requests-oauthlib==2.0.0
 rsa==4.9
+semver==3.0.2
 six==1.17.0
 soupsieve==2.6
 uritemplate==4.1.1

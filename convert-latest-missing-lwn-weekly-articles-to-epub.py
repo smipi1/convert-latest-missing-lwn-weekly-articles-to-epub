@@ -12,6 +12,8 @@ import shutil
 import subprocess
 import sys
 from urllib.parse import urlparse
+import feedparser
+import time
 
 import requests
 import semver
@@ -22,8 +24,8 @@ from ratelimit import limits, sleep_and_retry
 
 EPILOG = None
 TOOL_NAME = os.path.basename(__file__)
-ONE_MINUTE = 60
-MAX_CALLS_PER_MINUTE = 1
+ONE_SECOND = 1
+MAX_CALLS_PER_SECOND = 1
 CALIBRE_FLATPAK_APP_ID = 'com.calibre_ebook.calibre'
 MIN_SUPPORTED_CALIBRE_VER = '7.23.0'
 
@@ -155,40 +157,19 @@ def to_epub_file_path(args, date):
     """
     return os.path.join(
         args.epub_directory,
-        args.epub_file_format.format(weekno=date.strftime('%y%W'))
+        args.epub_file_format.format(weekno=time.strftime('%y%W', date))
     )
 
 
-def get_current_epub_id_maps(args):
+def get_epub_url_maps(args):
     """
-    Get a map of the hypothetical converted EPUB file to the current issue ID
+    Get a map of hypothetical downloaded EPUB files and their download URLs
     """
-    page = args.session.get(args.current_url)
-    soup = BeautifulSoup(page.text, 'html.parser')
+    d = feedparser.parse(args.rss_feed_url)
     result = {}
-    date_match = re.match(r'.* +for +(.*) +\[.*]', soup.title.text)[1]
-    date = parse_date(date_match)
-    epub_file_path = to_epub_file_path(args, date)
-    result[epub_file_path] = re.match(r'.*/Articles/(\w+)/', page.url)[1]
-    return result
-
-
-def get_archive_epub_id_maps(args):
-    """
-    Get a map of hypothetical converted EPUB files to the archived issue IDs
-    """
-    page = args.session.get(args.archive_url)
-    soup = BeautifulSoup(page.text, 'html.parser')
-    result = {}
-    for a in soup.find_all('a'):
-        if 'LWN.net Weekly Edition' in a.get_text():
-            date_str = re.match(r'.* +for +(.*) *', a.get_text())[1]
-            date = parse_date(date_str)
-            epub_file_path = to_epub_file_path(args, date)
-            result[epub_file_path] = re.match(
-                r'/Articles/(\w+)/',
-                a.get('href')
-            )[1]
+    for e in d.entries:
+        epub_file_path = to_epub_file_path(args, e.published_parsed)
+        result[epub_file_path] = e.link
     return result
 
 
@@ -205,25 +186,15 @@ def get_converted_epubs(args):
 
 
 @sleep_and_retry
-@limits(calls=MAX_CALLS_PER_MINUTE, period=ONE_MINUTE)
-def convert_issue_to_epub(args, dest, issue):
+@limits(calls=MAX_CALLS_PER_SECOND, period=ONE_SECOND)
+def download_epub(args, dest, url):
     """
-    Converts an LWN weekly issue to an EPUB file, applying rate limiting so
-    that LWN.net does not block us
+    Downloads the URL to the destination, applying rate limiting so that LWN.net
+    does not block us
     """
-    add_args = []
-    if all((args.username, args.password)):
-        add_args += [
-            f"--username={args.username}",
-            f"--password={args.password}"
-        ]
-    subprocess.run(
-        args.ebook_convert_app
-        + [args.ebook_convert_recipe, dest]
-        + add_args
-        + [f'--recipe-specific-option=issue:{issue}'],
-        check=True
-    )
+    req = args.session.get(url)
+    with open(dest, 'wb') as f:
+        f.write(req.content)
 
 
 def main() -> int:
@@ -265,16 +236,10 @@ def main() -> int:
         default='https://lwn.net/Login/',
     )
     parser.add_argument(
-        '--archive-url',
+        '--rss-feed-url',
         type=UrlType,
-        help='URL for the LWN.net Weekly Edition Archives page',
-        default='https://lwn.net/Archives/',
-    )
-    parser.add_argument(
-        '--current-url',
-        type=UrlType,
-        help='URL for the LWN.net Current Weekly Edition page',
-        default='https://lwn.net/current/',
+        help='URL for the LWN.net weekly edition RSS feed',
+        default='https://lwn.net/headlines/weekly_epub',
     )
     parser.add_argument(
         '--epub-directory',
@@ -337,16 +302,15 @@ def main() -> int:
         if response.status_code != 200:
             print("Login failed", file=sys.stderr)
             sys.exit(1)
-        most_recent_epub_id_maps |= get_current_epub_id_maps(args)
-    most_recent_epub_id_maps |= get_archive_epub_id_maps(args)
+    most_recent_epub_id_maps = get_epub_url_maps(args)
     converted_epubs = get_converted_epubs(args)
     missing_epub_id_maps = {
         k: v for k, v in most_recent_epub_id_maps.items()
         if k not in converted_epubs
     }
-    for dest, issue in missing_epub_id_maps.items():
-        print(f"Converting issue '{issue}' and saving to '{dest}'")
-        convert_issue_to_epub(args, dest, issue)
+    for dest, url in reversed(missing_epub_id_maps.items()):
+        print(f"Downloading '{url}' and saving to '{dest}'")
+        download_epub(args, dest, url)
     return 0
 
 

@@ -4,6 +4,7 @@ certifi==2024.12.14
 cffi==1.17.1
 charset-normalizer==3.4.1
 cryptography==44.0.0
+feedparser==6.0.12
 google-api-core==2.24.0
 google-api-python-client==2.156.0
 google-auth==2.37.0
@@ -28,6 +29,7 @@ requests==2.32.3
 requests-oauthlib==2.0.0
 rsa==4.9
 semver==3.0.2
+sgmllib3k==1.0.0
 six==1.17.0
 soupsieve==2.6
 uritemplate==4.1.1
